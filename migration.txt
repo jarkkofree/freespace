@@ -1,0 +1,35 @@
+Bevy 0.5 to 0.6:
+- Rust 2021 now required: Bevy updated to use Rust 2021 for taking advantage of the new Cargo feature resolver.
+- "AppBuilder" merged into "App": Functions of AppBuilder were merged into App.
+- "Component" trait derivation needed: Bevy no longer has a blanket implementation for the Component trait.
+- Setting the Component Storage: Now done in "Component" Trait.
+- System configuration changes: Calling ".system()" on a system is now optional.
+- ".single()" and ".single_mut()" changes: They are now infallible and panic if not exactly one Entity is found.
+- Renaming "Light" and "LightBundle": They are now "PointLight" and "PointLightBundle".
+- Split of System Param Lifetime: Lifetimes of SystemParam were split into two separate ones.
+- Changes in QuerySet: They now declare "QueryState" instead of "Query".
+- "Input<T>.update()" renamed: It is now "Input<T>.clear()".
+- "SystemState" is now "SystemMeta": To accommodate the new SystemState which allows easier cached access to SystemParams outside of a regular System.
+- Vector casting functions renamed: To match the return type.
+- StandardMaterial's "roughness" renamed: Now "perceptual_roughness".
+- Changes in SpriteBundle and Sprite: The SpriteBundle now uses a texture handle rather than a material.
+- Visible is now Visibility: And the field 'is_transparent' was removed.
+
+Bevy 0.6 to 0.7:
+1. ParamSet for conflicting SystemParam: Changing how systems declare parameters.
+2. AliasedMutability: A new variant in `QueryEntityError`.
+3. Remove margins.rs: Replacing `Margins` with `Rect`.
+4. Remove face_toward.rs: Replacing `Mat4::face_toward` with `Mat4::look_at_rh`.
+5. World::entities_mut is now unsafe: Need to call it within an unsafe block.
+6. Custom vertex attributes: Changing how custom vertex attributes are referenced.
+7. Mesh vertex buffer layouts: Simplified with the removal of manual layout requirements.
+8. Remove the need for 'IntoSystem::into_system()' when using run criteria piping: Simplifying run criteria syntax.
+9. Remove RunSystem: Advising against the use of certain systems.
+10. Replace VSync with PresentMode: Changing from a boolean to an enum.
+11. Fix mul_vec3 transformation order: Standardizing the transform application order.
+12. Use marker components for cameras instead of name strings: Changing camera identification method.
+13. Remove the config API: Removing and suggesting alternative patterns.
+14. Cameras now point at RenderTarget rather than Window: Adjusting camera targets.
+15. Implement init_resource for Commands and World: Changing resource insertion methods.
+16. Infallible resource getters: Simplifying resource getting.
+17. Event handling types are no longer re-exported from bevy_app: Changing import paths for event handling types【7†source】.
