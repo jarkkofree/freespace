@@ -17,7 +17,6 @@ impl Plugin for PlayerPlugin {
 
 #[derive(Resource)]
 struct Config {
-    clear_color: Color,
     player_spawn: Vec3,
     look_sensitivity: f32,
     walk_speed: f32,
@@ -26,7 +25,6 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            clear_color: Color::rgb(0.1, 0.1, 0.1),
             player_spawn: Vec3::new(0.0, 100.0, 0.0),
             look_sensitivity: 0.001,
             walk_speed: 50.0,
@@ -40,8 +38,6 @@ fn startup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let config = Config::default();
-
-    com.insert_resource(ClearColor(config.clear_color));
 
     let feet = com.spawn((
         PbrBundle {
@@ -71,42 +67,6 @@ fn startup(
     com.entity(legs).push_children(&[torso]);
     com.entity(torso).push_children(&[head]);
     com.entity(head).push_children(&[camera]);
-
-
-    let mut mesh = Mesh::try_from(shape::Icosphere {
-        radius: 100.0,
-        subdivisions: 20,
-    }).unwrap();
-
-    mesh.duplicate_vertices();
-    mesh.compute_flat_normals();
-
-    let material = StandardMaterial {
-        base_color: Color::YELLOW_GREEN,
-        ..default()
-    };
-
-    com.spawn(
-        PbrBundle {
-            mesh: meshes.add(mesh),
-            material: materials.add(material),
-            transform: Transform::IDENTITY,
-            ..default()
-        }
-    );
-
-    // spawn point light
-    com.spawn(PointLightBundle {
-        transform: Transform::from_xyz(0.0, 110.0, 0.0),
-        point_light: PointLight {
-            color: Color::WHITE,
-            intensity: 1_000.0,
-            range: 100.0,
-            shadows_enabled: true,
-            ..default()
-        },
-        ..default()
-    });
 
     com.insert_resource(config);
 }
