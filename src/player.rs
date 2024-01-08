@@ -32,47 +32,6 @@ impl Default for Config {
     }
 }
 
-fn startup(
-    mut com: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let config = Config::default();
-
-    let feet = com.spawn((
-        PbrBundle {
-            transform: Transform::from_translation(config.player_spawn),
-            ..default()
-        },
-        Feet,
-    )).id();
-    let legs = com.spawn((
-        make_box(&mut meshes, &mut materials, 1.0, 0.6, 0.3, Color::BEIGE, 0.5),
-        Legs,
-    )).id();
-    let torso = com.spawn((
-        make_box(&mut meshes, &mut materials, 1.0, 1.0, 0.5, Color::CYAN, 1.0),
-        Torso,
-    )).id();
-    let head = com.spawn(
-        make_box(&mut meshes, &mut materials, 0.4, 0.4, 0.5, Color::SALMON, 0.8)
-    ).id();
-    let camera = com.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 0.0, 7.0)
-            .looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    }).id();
-
-    com.entity(feet).push_children(&[legs]);
-    com.entity(legs).push_children(&[torso]);
-    com.entity(torso).push_children(&[head]);
-    com.entity(head).push_children(&[camera]);
-
-    com.insert_resource(config);
-}
-
-
-
 fn make_box(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
@@ -94,11 +53,60 @@ fn make_box(
     }
 }
 
-#[derive(Component)]
-struct Legs;
+fn startup(
+    mut com: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let config = Config::default();
+
+    let cube = shape::Box::new(1.0, 1.0, 1.0);
+    let mesh = Mesh::from(cube);
+    let mesh_handle = meshes.add(mesh);
+    let color = Color::SALMON;
+    let material = StandardMaterial::from(color);
+    let material_handle = materials.add(material);
+
+
+    let feet = com.spawn((
+        PbrBundle {
+            transform: Transform::from_xyz(0.0, 100.0, 0.0),
+            ..default()
+        },
+        Feet,
+    )).id();
+    let legs = com.spawn((
+        make_box(&mut meshes, &mut materials, 1.0, 0.6, 0.3, Color::BEIGE, 0.5),
+        Legs,
+    )).id();
+    let torso = com.spawn((
+        make_box(&mut meshes, &mut materials, 1.0, 1.0, 0.5, Color::CYAN, 1.0),
+        Torso
+    )).id();
+    let head = com.spawn((
+        make_box(&mut meshes, &mut materials, 0.4, 0.4, 0.5, Color::SALMON, 0.8),
+    )).id();
+    let camera = com.spawn(Camera3dBundle {
+        transform: Transform::from_xyz(0.0, 0.0, 7.0)
+            .looking_at(Vec3::ZERO, Vec3::Y),
+        ..default()
+    }).id();
+
+    com.entity(feet).push_children(&[legs]);
+    com.entity(legs).push_children(&[torso]);
+    com.entity(torso).push_children(&[head]);
+    com.entity(head).push_children(&[camera]);
+
+    com.insert_resource(config);
+}
+
+
 
 #[derive(Component)]
-struct Torso;
+struct Legs; // can yaw left and right
+
+#[derive(Component)]
+struct Torso; // can pitch up and down
 
 fn mouse_control(
     mut legs: Query<&mut Transform, (With<Legs>, Without<Torso>)>,
@@ -109,8 +117,8 @@ fn mouse_control(
     config: Res<Config>,
 ) {
     let mut window = window.single_mut();
-    let mut legs_transform = legs.single_mut();
-    let mut torso_transform = torso.single_mut();
+    let mut legs = legs.single_mut();
+    let mut torso = torso.single_mut();
 
     if mouse.just_pressed(MouseButton::Left) {
         window.cursor.visible = false;
@@ -134,75 +142,63 @@ fn mouse_control(
         if total_delta_x != 0.0 || total_delta_y != 0.0 {
 
             let rotation_input = total_delta_x * config.look_sensitivity;
-            legs_transform.rotate(Quat::from_rotation_y(rotation_input));
+            legs.rotate(Quat::from_rotation_y(rotation_input));
 
             let rotation_input = total_delta_y * config.look_sensitivity;
-            torso_transform.rotate(Quat::from_rotation_x(rotation_input));
+            torso.rotate(Quat::from_rotation_x(rotation_input));
 
         }
     }
 }
 
 #[derive(Component)]
-struct Feet;
+struct Feet; // always on the ground
 
 fn walk(
     mut feet: Query<&mut Transform, (With<Feet>, Without<Legs>)>,
-    mut legs: Query<(&mut Transform, &GlobalTransform), (With<Legs>, Without<Feet>)>,
+    mut legs: Query<&GlobalTransform, (With<Legs>, Without<Feet>)>,
     keys: ResMut<Input<KeyCode>>,
     time: Res<Time>,
     config: Res<Config>,
 ) {
     let mut feet_transform = feet.single_mut();
-    let (mut legs_transform, global_legs_transform) = legs.single_mut();
+    let global_legs_transform = legs.single_mut();
 
     let mut speed = Vec3::ZERO;
 
+    // get vectors of forward, back, left, right
     if keys.pressed(KeyCode::W) {
-        speed += legs_transform.forward();
+        speed += global_legs_transform.forward();
     }
     if keys.pressed(KeyCode::S) {
-        speed += legs_transform.back();
+        speed += global_legs_transform.back();
     }
     if keys.pressed(KeyCode::A) {
-        speed += legs_transform.left();
+        speed += global_legs_transform.left();
     }
     if keys.pressed(KeyCode::D) {
-        speed += legs_transform.right();
+        speed += global_legs_transform.right();
     }
 
     if speed.length_squared() > 0.0 {
 
-        let mut movement = speed.normalize() * config.walk_speed * time.delta_seconds();
-
-        let global_up = Transform::IDENTITY.up();
-        info!("global up: {:?}", global_up);
-        let legs_up = global_legs_transform.up();
-        info!("legs up: {:?}", legs_up);
-
-        let up_difference = Quat::from_rotation_arc(
-            legs_up, 
-            global_up
-        );
-
-        info!("rotation: {:?}", up_difference);
-
-        info!("before rotation: {:?}", movement);
-        movement = up_difference.mul_vec3(movement);
-        info!("after rotation: {:?}", movement);
-
+        // move feet forward
+        let movement = speed.normalize() * config.walk_speed * time.delta_seconds();
         feet_transform.translation += movement;
 
+        // keep feet on the ground
         let radius = 100.0;
         let relative_position = feet_transform.translation;
         feet_transform.translation = relative_position.normalize() * radius;
 
+        // 
         let up_difference = Quat::from_rotation_arc(
             global_legs_transform.up(), 
             feet_transform.translation.normalize()
         );
 
         // Apply the rotation difference to the player
-        legs_transform.rotate(up_difference);
+        feet_transform.rotate(up_difference);
+
     }
 }

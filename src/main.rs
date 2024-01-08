@@ -11,6 +11,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             PlayerPlugin,
+            PlanetPlugin,
         ))
         .run();
 }
