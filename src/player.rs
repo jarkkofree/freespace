@@ -10,7 +10,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Startup, startup)
             .add_systems(Update, (
                 mouse_control,
-                walk,
+                walk_on,
             ));
     }
 }
@@ -27,7 +27,7 @@ impl Default for Config {
         Config {
             player_spawn: Vec3::new(0.0, 100.0, 0.0),
             look_sensitivity: 0.001,
-            walk_speed: 50.0,
+            walk_speed: 10.0,
         }
     }
 }
@@ -67,13 +67,18 @@ fn startup(
     let material = StandardMaterial::from(color);
     let material_handle = materials.add(material);
 
-
+    let moon_radius = 25.0;
+    let moon_distance = 500.0;
     let feet = com.spawn((
         PbrBundle {
-            transform: Transform::from_xyz(0.0, 100.0, 0.0),
+            transform: Transform::from_xyz(0.0, moon_radius, moon_distance),
             ..default()
         },
         Feet,
+        On {
+            planet: Transform::from_xyz(0.0, 0.0, moon_distance),
+            radius: moon_radius,
+        },
     )).id();
     let legs = com.spawn((
         make_box(&mut meshes, &mut materials, 1.0, 0.6, 0.3, Color::BEIGE, 0.5),
@@ -154,14 +159,20 @@ fn mouse_control(
 #[derive(Component)]
 struct Feet; // always on the ground
 
-fn walk(
-    mut feet: Query<&mut Transform, (With<Feet>, Without<Legs>)>,
+#[derive(Component)]
+struct On {
+    planet: Transform,
+    radius: f32,
+}
+
+fn walk_on(
+    mut feet: Query<(&mut Transform, &On), (With<Feet>, Without<Legs>)>,
     mut legs: Query<&GlobalTransform, (With<Legs>, Without<Feet>)>,
     keys: ResMut<Input<KeyCode>>,
     time: Res<Time>,
     config: Res<Config>,
 ) {
-    let mut feet_transform = feet.single_mut();
+    let (mut feet_transform, on) = feet.single_mut();
     let global_legs_transform = legs.single_mut();
 
     let mut speed = Vec3::ZERO;
@@ -187,14 +198,14 @@ fn walk(
         feet_transform.translation += movement;
 
         // keep feet on the ground
-        let radius = 100.0;
-        let relative_position = feet_transform.translation;
-        feet_transform.translation = relative_position.normalize() * radius;
+        let radius = on.radius;
+        let relative_position = feet_transform.translation - on.planet.translation;
+        feet_transform.translation = on.planet.translation + relative_position.normalize() * radius;
 
         // 
         let up_difference = Quat::from_rotation_arc(
             global_legs_transform.up(), 
-            feet_transform.translation.normalize()
+            (feet_transform.translation - on.planet.translation).normalize()
         );
 
         // Apply the rotation difference to the player
