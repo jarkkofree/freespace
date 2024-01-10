@@ -2,6 +2,8 @@ use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::window::CursorGrabMode;
 
+use crate::planet;
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -17,7 +19,6 @@ impl Plugin for PlayerPlugin {
 
 #[derive(Resource)]
 struct Config {
-    player_spawn: Vec3,
     look_sensitivity: f32,
     walk_speed: f32,
 }
@@ -25,31 +26,9 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            player_spawn: Vec3::new(0.0, 100.0, 0.0),
             look_sensitivity: 0.001,
             walk_speed: 10.0,
         }
-    }
-}
-
-fn make_box(
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
-    height: f32,
-    width: f32,
-    depth: f32,
-    color: Color,
-    y_offset: f32,
-) -> PbrBundle {
-
-    let mesh = Mesh::from(shape::Box::new(width, height, depth));
-    let material = StandardMaterial::from(color);
-
-    PbrBundle {
-        mesh: meshes.add(mesh),
-        material: materials.add(material),
-        transform: Transform::from_xyz(0.0, y_offset, 0.0),
-        ..default()
     }
 }
 
@@ -59,37 +38,85 @@ fn startup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let config = Config::default();
+    let planet_config = crate::planet::Config::default();
 
-    let cube = shape::Box::new(1.0, 1.0, 1.0);
-    let mesh = Mesh::from(cube);
-    let mesh_handle = meshes.add(mesh);
-    let color = Color::SALMON;
-    let material = StandardMaterial::from(color);
-    let material_handle = materials.add(material);
+    let leg_height = 1.0;
+    let torso_height = 1.0;
+    let head_height = 0.4;
 
-    let moon_radius = 25.0;
-    let moon_distance = 500.0;
+    let leg_shape = shape::Box::new(0.6, leg_height, 0.3);
+    let torso_shape = shape::Box::new(1.0, torso_height, 0.5);
+    let head_shape = shape::Box::new(0.4, head_height, 0.5);
+
+    let leg_mesh = Mesh::from(leg_shape);
+    let torso_mesh = Mesh::from(torso_shape);
+    let head_mesh = Mesh::from(head_shape);
+
+
+    let leg_mesh_handle = meshes.add(leg_mesh);
+    let torso_mesh_handle = meshes.add(torso_mesh);
+    let head_mesh_handle = meshes.add(head_mesh);
+
+    let leg_color = Color::BEIGE;
+    let torso_color = Color::CYAN;
+    let head_color = Color::SALMON;
+
+    let leg_material = StandardMaterial::from(leg_color);
+    let torso_material = StandardMaterial::from(torso_color);
+    let head_material = StandardMaterial::from(head_color);
+
+    let leg_material_handle = materials.add(leg_material);
+    let torso_material_handle = materials.add(torso_material);
+    let head_material_handle = materials.add(head_material);
+
+    let leg_offset = leg_height/2.0;
+    let torso_offset = leg_height/2.0 + torso_height/2.0;
+    let head_offset = torso_height/2.0 + head_height/2.0 + 0.1;
+
+
+    let leg_transform = Transform::from_xyz(0.0, leg_offset, 0.0);
+    let torso_transform = Transform::from_xyz(0.0, torso_offset, 0.0);
+    let head_transform = Transform::from_xyz(0.0, head_offset, 0.0);
+
+    let body_translation = planet_config.planet.translation;
+    let body_radius = planet_config.planet.radius;
+    let body_contact_translation = body_translation + Vec3::new(0.0, body_radius, 0.0);
     let feet = com.spawn((
         PbrBundle {
-            transform: Transform::from_xyz(0.0, moon_radius, moon_distance),
+            transform: Transform::from_translation(body_contact_translation),
             ..default()
         },
-        Feet,
-        On {
-            planet: Transform::from_xyz(0.0, 0.0, moon_distance),
-            radius: moon_radius,
+        PlanetContact,
+        OnPlanet {
+            planet: Transform::from_translation(body_translation),
+            radius: body_radius,
         },
     )).id();
     let legs = com.spawn((
-        make_box(&mut meshes, &mut materials, 1.0, 0.6, 0.3, Color::BEIGE, 0.5),
+        PbrBundle {
+            mesh: leg_mesh_handle,
+            material: leg_material_handle,
+            transform: leg_transform,
+            ..default()
+        },
         Legs,
     )).id();
     let torso = com.spawn((
-        make_box(&mut meshes, &mut materials, 1.0, 1.0, 0.5, Color::CYAN, 1.0),
+        PbrBundle {
+            mesh: torso_mesh_handle,
+            material: torso_material_handle,
+            transform: torso_transform,
+            ..default()
+        },
         Torso
     )).id();
     let head = com.spawn((
-        make_box(&mut meshes, &mut materials, 0.4, 0.4, 0.5, Color::SALMON, 0.8),
+        PbrBundle {
+            mesh: head_mesh_handle,
+            material: head_material_handle,
+            transform: head_transform,
+            ..default()
+        },
     )).id();
     let camera = com.spawn(Camera3dBundle {
         transform: Transform::from_xyz(0.0, 0.0, 7.0)
@@ -157,22 +184,22 @@ fn mouse_control(
 }
 
 #[derive(Component)]
-struct Feet; // always on the ground
+struct PlanetContact; // always on the ground
 
 #[derive(Component)]
-struct On {
+struct OnPlanet {
     planet: Transform,
     radius: f32,
 }
 
 fn walk_on(
-    mut feet: Query<(&mut Transform, &On), (With<Feet>, Without<Legs>)>,
-    mut legs: Query<&GlobalTransform, (With<Legs>, Without<Feet>)>,
+    mut planet_contact: Query<(&mut Transform, &OnPlanet), (With<PlanetContact>, Without<Legs>)>,
+    mut legs: Query<&GlobalTransform, (With<Legs>, Without<PlanetContact>)>,
     keys: ResMut<Input<KeyCode>>,
     time: Res<Time>,
     config: Res<Config>,
 ) {
-    let (mut feet_transform, on) = feet.single_mut();
+    let (mut planet_contact, on) = planet_contact.single_mut();
     let global_legs_transform = legs.single_mut();
 
     let mut speed = Vec3::ZERO;
@@ -193,23 +220,23 @@ fn walk_on(
 
     if speed.length_squared() > 0.0 {
 
-        // move feet forward
+        // move feet
         let movement = speed.normalize() * config.walk_speed * time.delta_seconds();
-        feet_transform.translation += movement;
+        planet_contact.translation += movement;
 
         // keep feet on the ground
         let radius = on.radius;
-        let relative_position = feet_transform.translation - on.planet.translation;
-        feet_transform.translation = on.planet.translation + relative_position.normalize() * radius;
+        let relative_position = planet_contact.translation - on.planet.translation;
+        planet_contact.translation = on.planet.translation + relative_position.normalize() * radius;
 
-        // 
+        // realign legs to planet up
         let up_difference = Quat::from_rotation_arc(
             global_legs_transform.up(), 
-            (feet_transform.translation - on.planet.translation).normalize()
+            (planet_contact.translation - on.planet.translation).normalize()
         );
 
         // Apply the rotation difference to the player
-        feet_transform.rotate(up_difference);
+        planet_contact.rotate(up_difference);
 
     }
 }

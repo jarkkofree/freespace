@@ -1,4 +1,6 @@
-use bevy::{prelude::*, pbr::OpaqueRendererMethod};
+use bevy::prelude::*;
+
+use crate::star;
 
 pub struct PlanetPlugin;
 
@@ -9,15 +11,127 @@ impl Plugin for PlanetPlugin {
     }
 }
 
-#[derive(Resource)]
-struct Config {
+
+fn get_subdivisions(radius: f32) -> usize {
+    let a: f32 = 120.0;
+    (80.0-a*80.0/(radius+a)) as usize
+}
+
+#[derive(Clone)]
+pub struct Body {
+    pub radius: f32,
+    pub translation: Vec3,
+    material: StandardMaterial,
+    mesh: Mesh,
+}
+
+impl Body {
+
+    fn new(radius: f32, color: Color, emissive: bool) -> Self {
+
+        let translation = Vec3::ZERO;
+
+        let material;
+        let subdivisions;
+        if emissive {
+            material = StandardMaterial {
+                base_color: Color::BLACK,
+                emissive: color,
+                reflectance: 0.0,
+                ..default()
+            };
+            subdivisions = 0; // won't walk on stars, so no need for subdivisions
+        } else {
+            material = StandardMaterial {
+                base_color: color,
+                ..default()
+            };
+            subdivisions = get_subdivisions(radius);
+        }
+
+        let shape = shape::Icosphere {
+            radius: radius,
+            subdivisions,
+        };
+        let mesh = Mesh::try_from(shape).unwrap();
+
+        Body {
+            radius,
+            translation,
+            material,
+            mesh,
+        }
+    }
+
+    fn with_distance_from(mut self, distance: f32, distance_axis: Vec3, from: Vec3) -> Self {
+        let translation = from + distance_axis * distance;
+        self.translation = translation;
+        self
+    }
+
+}
+
+#[derive(Resource, Clone)]
+pub struct Config {
     clear_color: Color,
+    sun: Body,
+    beetlejuice: Body,
+    alpha_centauri: Body,
+
+    // PlayerPlugin needs to know where it can walk
+    pub planet: Body,
+    pub moon: Body,
 }
 
 impl Default for Config {
     fn default() -> Self {
+
+        let distance = 100_000.0;
+
+        let planet = Body::new(
+            100.0,
+            Color::YELLOW_GREEN,
+            false,
+        );
+        let sun = Body::new(
+            planet.radius * 100.0,
+            Color::YELLOW,
+            true,
+        )
+        .with_distance_from(distance, Vec3::Y, planet.translation);
+
+        let moon = Body::new(
+            planet.radius / 4.0,
+            Color::SILVER,
+            false,
+        )
+        .with_distance_from(distance / 400.0, Vec3::Z, planet.translation);
+
+        let star_distance = sun.radius * 1_000.0;
+
+        let beetlejuice = Body::new(
+            sun.radius * 10.0,
+            Color::RED,
+            true,
+        )
+        .with_distance_from(star_distance, Vec3::X, sun.translation);
+
+        let alpha_centauri = Body::new(
+            sun.radius * 2.0,
+            Color::CYAN,
+            true,
+        )
+        .with_distance_from(star_distance, -Vec3::X, sun.translation);        
+
+
+
         Config {
             clear_color: Color::rgb(0.1, 0.1, 0.1),
+            sun,
+            planet,
+            moon,
+            beetlejuice,
+            alpha_centauri,
         }
     }
 }
@@ -28,155 +142,63 @@ fn startup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let config = Config::default();
+    com.insert_resource(config.clone());
 
     com.insert_resource(ClearColor(config.clear_color));
 
-    let planet_radius = 100.0;
-    let mut planet_mesh = Mesh::try_from(shape::Icosphere {
-        radius: planet_radius,
-        subdivisions: 50,
-    }).unwrap();
-    planet_mesh.duplicate_vertices();
-    planet_mesh.compute_flat_normals();
-
-    let moon_radius = planet_radius / 4.0;
-    let mut moon_mesh = Mesh::try_from(shape::Icosphere {
-        radius: moon_radius,
-        subdivisions: 10,
-    }).unwrap();
-    moon_mesh.duplicate_vertices();
-    moon_mesh.compute_flat_normals();
-
-    let sun_radius = moon_radius * 400.0;
-    let sun_mesh = Mesh::try_from(shape::Icosphere {
-        radius: sun_radius,
-        subdivisions: 0,
-    }).unwrap();
-
-    let planet_mesh_handle = meshes.add(planet_mesh);
-    let moon_mesh_handle = meshes.add(moon_mesh);
-    let sun_mesh_handle = meshes.add(sun_mesh);
-
-
-
-    let planet_material = StandardMaterial {
-        base_color: Color::YELLOW_GREEN,
-        reflectance: 0.0,
-        ..default()
-    };
-    let moon_material = StandardMaterial {
-        base_color: Color::SILVER,
-        reflectance: 0.0,
-        ..default()
-    };
-    let sun_material = StandardMaterial {
-        base_color: Color::BLACK,
-        emissive: Color::YELLOW,
-        reflectance: 0.0,
-        ..default()
-    };
-    let beetlejuice_material = StandardMaterial {
-        base_color: Color::RED,
-        emissive: Color::RED,
-        reflectance: 0.0,
-        ..default()
-    };
-    let alpha_centauri_material = StandardMaterial {
-        base_color: Color::CYAN,
-        emissive: Color::CYAN,
-        reflectance: 0.0,
-        ..default()
-    };
-
-    let planet_material_handle = materials.add(planet_material);
-    let moon_material_handle = materials.add(moon_material);
-    let sun_material_handle = materials.add(sun_material);
-    let beetlejuice_material_handle = materials.add(beetlejuice_material);
-    let alpha_centauri_material = materials.add(alpha_centauri_material);
-
-
-
-    com.spawn(
-        PbrBundle {
-            mesh: planet_mesh_handle,
-            material: planet_material_handle,
-            transform: Transform::IDENTITY,
+    // Planet
+    com.spawn(PbrBundle {
+            mesh: meshes.add(config.planet.mesh),
+            material: materials.add(config.planet.material),
+            transform: Transform::from_translation(config.planet.translation),
             ..default()
-        }
-    );
-    let moon_distance = 500.0;
-    com.spawn(
-        PbrBundle {
-            mesh: moon_mesh_handle,
-            material: moon_material_handle,
-            transform: Transform::from_xyz(0.0, 0.0, moon_distance),
+    });
+
+    // Moon
+    com.spawn(PbrBundle {
+            mesh: meshes.add(config.moon.mesh),
+            material: materials.add(config.moon.material),
+            transform: Transform::from_translation(config.moon.translation),
             ..default()
-        }
-    );
-    let sun_distance = moon_distance * 400.0;
+    });
+
+    // Sun
     com.spawn((
         PbrBundle {
-            mesh: sun_mesh_handle.clone(),
-            material: sun_material_handle.clone(),
-            transform: Transform::from_xyz(0.0, sun_distance, 0.0),
+            mesh: meshes.add(config.sun.mesh),
+            material: materials.add(config.sun.material),
+            transform: Transform::from_translation(config.sun.translation),
             ..default()
         },
         bevy::pbr::NotShadowCaster,
     ));
-    let star_distance = sun_distance * 50.0;
-    let beetlejuice_size = 10.0;
-    com.spawn((
-        PbrBundle {
-            mesh: sun_mesh_handle.clone(),
-            material: beetlejuice_material_handle.clone(),
-            transform: Transform::from_xyz(star_distance, 0.0, 0.0)
-                .with_scale(Vec3::splat(beetlejuice_size)),
-            ..default()
-        },
-        bevy::pbr::NotShadowCaster,
-    ));
-    let alpha_centauri_size = 2.0;
-    com.spawn((
-        PbrBundle {
-            mesh: sun_mesh_handle.clone(),
-            material: alpha_centauri_material.clone(),
-            transform: Transform::from_xyz(-star_distance, 0.0, 0.0)
-            .with_scale(Vec3::splat(alpha_centauri_size)),
-            ..default()
-        },
-        bevy::pbr::NotShadowCaster,
-    ));
-    com.spawn((
-        PbrBundle {
-            mesh: sun_mesh_handle.clone(),
-            material: sun_material_handle.clone(),
-            transform: Transform::from_xyz(0.0, -star_distance, 0.0),
-            ..default()
-        },
-        bevy::pbr::NotShadowCaster,
-    ));
-    com.spawn((
-        PbrBundle {
-            mesh: sun_mesh_handle.clone(),
-            material: sun_material_handle.clone(),
-            transform: Transform::from_xyz(0.0, 0.0, -star_distance),
-            ..default()
-        },
-        bevy::pbr::NotShadowCaster,
-    ));
-
-
-    // spawn point light
+    let sun_light = DirectionalLight {
+        color: Color::WHITE,
+        shadows_enabled: true,
+        ..default()
+    };
     com.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
-            color: Color::WHITE,
-            shadows_enabled: true,
-            ..default()
-        },
-        transform: Transform::from_xyz(0.0, sun_distance, 0.0)
-            .looking_at(Vec3::ZERO, Vec3::Y),
+        directional_light: sun_light,
+        transform: Transform::from_translation(config.sun.translation)
+            .looking_at(config.planet.translation, Vec3::Y),
         ..default()
     });
 
-    com.insert_resource(config);
+    // Stars
+    com.spawn((
+        PbrBundle {
+            mesh: meshes.add(config.beetlejuice.mesh),
+            material: materials.add(config.beetlejuice.material),
+            transform: Transform::from_translation(config.beetlejuice.translation),
+            ..default()
+        },
+    ));
+    com.spawn((
+        PbrBundle {
+            mesh: meshes.add(config.alpha_centauri.mesh),
+            material: materials.add(config.alpha_centauri.material),
+            transform: Transform::from_translation(config.alpha_centauri.translation),
+            ..default()
+        },
+    ));
 }
