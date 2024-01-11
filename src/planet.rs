@@ -1,6 +1,13 @@
 use bevy::prelude::*;
 
-use crate::star;
+use rand::prelude::*;
+use rand_pcg::Pcg64;
+use rand_seeder::Seeder;
+
+use std::ops::Range;
+use std::f32::consts::PI;
+
+use crate::star_names::STAR_NAMES;
 
 pub struct PlanetPlugin;
 
@@ -11,18 +18,11 @@ impl Plugin for PlanetPlugin {
     }
 }
 
-
-fn get_subdivisions(radius: f32) -> usize {
-    let a: f32 = 120.0;
-    (80.0-a*80.0/(radius+a)) as usize
-}
-
 #[derive(Clone)]
 pub struct Body {
     pub radius: f32,
     pub translation: Vec3,
     material: StandardMaterial,
-    mesh: Mesh,
 }
 
 impl Body {
@@ -32,7 +32,6 @@ impl Body {
         let translation = Vec3::ZERO;
 
         let material;
-        let subdivisions;
         if emissive {
             material = StandardMaterial {
                 base_color: Color::BLACK,
@@ -40,26 +39,17 @@ impl Body {
                 reflectance: 0.0,
                 ..default()
             };
-            subdivisions = 0; // won't walk on stars, so no need for subdivisions
         } else {
             material = StandardMaterial {
                 base_color: color,
                 ..default()
             };
-            subdivisions = get_subdivisions(radius);
         }
-
-        let shape = shape::Icosphere {
-            radius: radius,
-            subdivisions,
-        };
-        let mesh = Mesh::try_from(shape).unwrap();
 
         Body {
             radius,
             translation,
             material,
-            mesh,
         }
     }
 
@@ -71,12 +61,27 @@ impl Body {
 
 }
 
+const RED_STAR: Color = Color::rgb(0.996, 0.494, 0.137);
+const YELLOW_STAR: Color = Color::rgb(0.996, 0.855, 0.714);
+const BLUE_STAR: Color = Color::rgb(0.604, 0.686, 0.996);
+
+const STAR_COLORS: [Color; 3] = [RED_STAR, YELLOW_STAR, BLUE_STAR];
+
+const GRASS: Color = Color::YELLOW_GREEN;
+const DUST: Color = Color::SILVER;
+
+const AU: f32 = 400_000.0;
+const EARTH_RADIUS: f32 = 100.0;
+const SOL_RADIUS: f32 = EARTH_RADIUS * 100.0;
+const MOON_RADIUS: f32 = EARTH_RADIUS / 4.0;
+const MOON_DISTANCE: f32 = AU / 400.0;
+
 #[derive(Resource, Clone)]
 pub struct Config {
     clear_color: Color,
-    sun: Body,
-    beetlejuice: Body,
-    alpha_centauri: Body,
+    galaxy_size: f32,
+    star_radius: Range<f32>,
+    star_separation: f32,
 
     // PlayerPlugin needs to know where it can walk
     pub planet: Body,
@@ -86,52 +91,111 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
 
-        let distance = 100_000.0;
-
         let planet = Body::new(
-            100.0,
-            Color::YELLOW_GREEN,
+            EARTH_RADIUS,
+            GRASS,
             false,
         );
-        let sun = Body::new(
-            planet.radius * 100.0,
-            Color::YELLOW,
-            true,
-        )
-        .with_distance_from(distance, Vec3::Y, planet.translation);
 
         let moon = Body::new(
-            planet.radius / 4.0,
-            Color::SILVER,
+            MOON_RADIUS,
+            DUST,
             false,
         )
-        .with_distance_from(distance / 400.0, Vec3::Z, planet.translation);
-
-        let star_distance = sun.radius * 1_000.0;
-
-        let beetlejuice = Body::new(
-            sun.radius * 10.0,
-            Color::RED,
-            true,
-        )
-        .with_distance_from(star_distance, Vec3::X, sun.translation);
-
-        let alpha_centauri = Body::new(
-            sun.radius * 2.0,
-            Color::CYAN,
-            true,
-        )
-        .with_distance_from(star_distance, -Vec3::X, sun.translation);        
-
-
-
+        .with_distance_from(MOON_DISTANCE, Vec3::Z, planet.translation);
+   
         Config {
             clear_color: Color::rgb(0.1, 0.1, 0.1),
-            sun,
+            galaxy_size: AU * 200.0,
+            star_radius: SOL_RADIUS / 10.0..SOL_RADIUS * 10.0,
+            star_separation: AU * 20.0,
+
             planet,
             moon,
-            beetlejuice,
-            alpha_centauri,
+        }
+    }
+}
+
+
+
+struct Moon {
+    name: String,
+    orbit: Vec3,
+    radius: f32,
+    color: Color,
+}
+
+struct Planet {
+    name: String,
+    orbit: Vec3,
+    radius: f32,
+    color: Color,
+    moons: Vec<Moon>,
+}
+
+struct Star {
+    name: String,
+    translation: Vec3,
+    radius: f32,
+    color: Color,
+    planets: Vec<Planet>,
+}
+
+struct Galaxy {
+    name: String,
+    stars: Vec<Star>,
+}
+
+impl Galaxy {
+    fn new(name: String, config: &Config) -> Self {
+        let mut rng: Pcg64 = Seeder::from(name.clone()).make_rng();
+
+        let mut stars: Vec<Star> = Vec::new();
+
+        stars.push(Star {
+            name: "Sol".to_string(),
+            translation: Vec3::Y * AU,
+            radius: SOL_RADIUS,
+            color: YELLOW_STAR,
+            planets: Vec::new(),
+        });
+
+        for star in STAR_NAMES.iter() {
+
+            // generate a random rotation as a quaternion
+            let rotation =
+                Quat::from_rotation_x(rng.gen_range(-PI..PI)) *
+                Quat::from_rotation_y(rng.gen_range(-PI..PI)) *
+                Quat::from_rotation_z(rng.gen_range(-PI..PI));
+
+            let distance = rng.gen_range(0.0..config.galaxy_size) * Vec3::Y;
+
+            let mut translation = rotation * distance;
+            // check that translation is not within 2 * AU of any other star
+            for other_star in stars.iter() {
+                if (translation - other_star.translation).length() < config.star_separation {
+                    // move the star 2.0 * AU away from the other star
+                    translation += (translation - other_star.translation).normalize() * 2.0 * AU;
+                }
+            }
+
+            let radius = rng.gen_range(config.star_radius.clone());
+
+            let color = STAR_COLORS[rng.gen_range(0..STAR_COLORS.len())];
+
+            stars.push(Star {
+                name: star.to_string(),
+                translation,
+                radius,
+                color,
+                planets: Vec::new(),
+            });
+        }
+
+
+        Galaxy {
+            name,
+            stars,
         }
     }
 }
@@ -146,59 +210,61 @@ fn startup(
 
     com.insert_resource(ClearColor(config.clear_color));
 
+    let galaxy = Galaxy::new("Milky Way".to_string(), &config);
+
+    let mesh_handle = meshes.add(
+        Mesh::try_from(shape::Icosphere {
+            radius: 1.0,
+            subdivisions: 40,
+        }).unwrap()
+    );
+    for star in galaxy.stars {
+        com.spawn((
+            PbrBundle {
+                mesh: mesh_handle.clone(),
+                material: materials.add(
+                    StandardMaterial {
+                        base_color: Color::BLACK,
+                        emissive: star.color,
+                        reflectance: 0.0,
+                        ..default()
+                    }
+                ),
+                transform: Transform::from_translation(star.translation)
+                    .with_scale(Vec3::splat(star.radius)),
+                ..default()
+            },
+            bevy::pbr::NotShadowCaster,
+        ));
+    }
+
     // Planet
     com.spawn(PbrBundle {
-            mesh: meshes.add(config.planet.mesh),
+            mesh: mesh_handle.clone(),
             material: materials.add(config.planet.material),
-            transform: Transform::from_translation(config.planet.translation),
+            transform: Transform::from_translation(config.planet.translation)
+                .with_scale(Vec3::splat(config.planet.radius)),
             ..default()
     });
 
     // Moon
     com.spawn(PbrBundle {
-            mesh: meshes.add(config.moon.mesh),
+            mesh: mesh_handle.clone(),
             material: materials.add(config.moon.material),
-            transform: Transform::from_translation(config.moon.translation),
+            transform: Transform::from_translation(config.moon.translation)
+                .with_scale(Vec3::splat(config.moon.radius)),
             ..default()
     });
 
-    // Sun
-    com.spawn((
-        PbrBundle {
-            mesh: meshes.add(config.sun.mesh),
-            material: materials.add(config.sun.material),
-            transform: Transform::from_translation(config.sun.translation),
-            ..default()
-        },
-        bevy::pbr::NotShadowCaster,
-    ));
     let sun_light = DirectionalLight {
-        color: Color::WHITE,
+        color: YELLOW_STAR,
         shadows_enabled: true,
         ..default()
     };
     com.spawn(DirectionalLightBundle {
         directional_light: sun_light,
-        transform: Transform::from_translation(config.sun.translation)
+        transform: Transform::from_translation(Vec3::Y * AU)
             .looking_at(config.planet.translation, Vec3::Y),
         ..default()
     });
-
-    // Stars
-    com.spawn((
-        PbrBundle {
-            mesh: meshes.add(config.beetlejuice.mesh),
-            material: materials.add(config.beetlejuice.material),
-            transform: Transform::from_translation(config.beetlejuice.translation),
-            ..default()
-        },
-    ));
-    com.spawn((
-        PbrBundle {
-            mesh: meshes.add(config.alpha_centauri.mesh),
-            material: materials.add(config.alpha_centauri.material),
-            transform: Transform::from_translation(config.alpha_centauri.translation),
-            ..default()
-        },
-    ));
 }

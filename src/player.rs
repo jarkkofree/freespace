@@ -2,8 +2,6 @@ use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::window::CursorGrabMode;
 
-use crate::planet;
-
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -69,9 +67,10 @@ fn startup(
     let torso_material_handle = materials.add(torso_material);
     let head_material_handle = materials.add(head_material);
 
-    let leg_offset = leg_height/2.0;
-    let torso_offset = leg_height/2.0 + torso_height/2.0;
-    let head_offset = torso_height/2.0 + head_height/2.0 + 0.1;
+    const HALF : f32 = 0.5;
+    let leg_offset = leg_height * HALF;
+    let torso_offset = leg_height * HALF + torso_height * HALF;
+    let head_offset = torso_height * HALF + head_height * HALF + 0.1;
 
 
     let leg_transform = Transform::from_xyz(0.0, leg_offset, 0.0);
@@ -81,7 +80,7 @@ fn startup(
     let body_translation = planet_config.planet.translation;
     let body_radius = planet_config.planet.radius;
     let body_contact_translation = body_translation + Vec3::new(0.0, body_radius, 0.0);
-    let feet = com.spawn((
+    let body_contact = com.spawn((
         PbrBundle {
             transform: Transform::from_translation(body_contact_translation),
             ..default()
@@ -124,7 +123,7 @@ fn startup(
         ..default()
     }).id();
 
-    com.entity(feet).push_children(&[legs]);
+    com.entity(body_contact).push_children(&[legs]);
     com.entity(legs).push_children(&[torso]);
     com.entity(torso).push_children(&[head]);
     com.entity(head).push_children(&[camera]);

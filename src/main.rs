@@ -6,8 +6,7 @@ use player::PlayerPlugin;
 mod planet;
 use planet::PlanetPlugin;
 
-mod star;
-use star::StarPlugin;
+mod star_names;
 
 fn main() {
     App::new()
