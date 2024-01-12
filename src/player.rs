@@ -2,6 +2,8 @@ use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::window::CursorGrabMode;
 
+use crate::planet;
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -25,7 +27,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             look_sensitivity: 0.001,
-            walk_speed: 10.0,
+            walk_speed: 50.0,
         }
     }
 }

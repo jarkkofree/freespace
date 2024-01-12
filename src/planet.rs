@@ -1,3 +1,4 @@
+use bevy::pbr::{CascadeShadowConfigBuilder, CascadeShadowConfig};
 use bevy::prelude::*;
 
 use rand::prelude::*;
@@ -66,11 +67,12 @@ const YELLOW_STAR: Color = Color::rgb(0.996, 0.855, 0.714);
 const BLUE_STAR: Color = Color::rgb(0.604, 0.686, 0.996);
 
 const STAR_COLORS: [Color; 3] = [RED_STAR, YELLOW_STAR, BLUE_STAR];
+const STARLIGHT_INTENSITY: f32 = 3.4028235e13;
 
 const GRASS: Color = Color::YELLOW_GREEN;
 const DUST: Color = Color::SILVER;
 
-const AU: f32 = 400_000.0;
+pub const AU: f32 = 400_000.0;
 const EARTH_RADIUS: f32 = 100.0;
 const SOL_RADIUS: f32 = EARTH_RADIUS * 100.0;
 const MOON_RADIUS: f32 = EARTH_RADIUS / 4.0;
@@ -175,7 +177,7 @@ impl Galaxy {
             for other_star in stars.iter() {
                 if (translation - other_star.translation).length() < config.star_separation {
                     // move the star 2.0 * AU away from the other star
-                    translation += (translation - other_star.translation).normalize() * 2.0 * AU;
+                    translation += (translation - other_star.translation).normalize() * config.star_separation;
                 }
             }
 
@@ -218,6 +220,12 @@ fn startup(
             subdivisions: 40,
         }).unwrap()
     );
+
+    let cascade_shadow_config: CascadeShadowConfig = CascadeShadowConfigBuilder {
+        maximum_distance: config.star_separation,
+        ..default()
+    }.into();
+
     for star in galaxy.stars {
         com.spawn((
             PbrBundle {
@@ -236,6 +244,21 @@ fn startup(
             },
             bevy::pbr::NotShadowCaster,
         ));
+        // com.spawn((
+        //     PointLightBundle {
+        //         point_light: PointLight {
+        //             color: star.color,
+        //             intensity: STARLIGHT_INTENSITY,
+        //             range: config.galaxy_size,
+        //             radius: star.radius,
+        //             shadows_enabled: true,
+        //             ..default()
+        //         },
+        //         transform: Transform::from_translation(star.translation),
+        //         ..default()
+        //     },
+        //     cascade_shadow_config.clone(),
+        // ));
     }
 
     // Planet
@@ -256,15 +279,29 @@ fn startup(
             ..default()
     });
 
-    let sun_light = DirectionalLight {
+    // let sun_light = DirectionalLight {
+    //     color: YELLOW_STAR,
+    //     shadows_enabled: true,
+    //     ..default()
+    // };
+    // com.spawn(DirectionalLightBundle {
+    //     directional_light: sun_light,
+    //     transform: Transform::from_translation(Vec3::Y * AU)
+    //         .looking_at(config.planet.translation, Vec3::Y),
+    //     ..default()
+    // });
+
+    let sun_point_light = PointLight {
         color: YELLOW_STAR,
+        intensity: STARLIGHT_INTENSITY,
+        range: AU * 2.0,
+        radius: SOL_RADIUS,
         shadows_enabled: true,
         ..default()
     };
-    com.spawn(DirectionalLightBundle {
-        directional_light: sun_light,
-        transform: Transform::from_translation(Vec3::Y * AU)
-            .looking_at(config.planet.translation, Vec3::Y),
+    com.spawn(PointLightBundle {
+        point_light: sun_point_light,
+        transform: Transform::from_translation(Vec3::Y * 125.00),
         ..default()
     });
 }
